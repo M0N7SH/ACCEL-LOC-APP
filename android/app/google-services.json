@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "625076401474",
+    "project_id": "accel-attend",
+    "storage_bucket": "accel-attend.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:625076401474:android:70408b37b58d7bdaaf44db",
+        "android_client_info": {
+          "package_name": "com.example.sample"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD5JmQTqdgy5deMFBUF9FEmZP4aZ_k7SEk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

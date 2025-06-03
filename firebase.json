@@ -1,0 +1,40 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "accel-attend",
+          "appId": "1:625076401474:android:70408b37b58d7bdaaf44db",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "accel-attend",
+          "configurations": {
+            "android": "1:625076401474:android:70408b37b58d7bdaaf44db",
+            "ios": "1:625076401474:ios:906f178e15d3af7aaf44db",
+            "web": "1:625076401474:web:94d1fc80f886fc12af44db"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "sendemail",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run lint"
+      ]
+    }
+
+  ]
+}
