@@ -30,16 +30,12 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<bool> isAdminUser(String email) async {
-    print('hello');
     final adminQuery = await FirebaseFirestore.instance
         .collection('admin')
         .where('email', isEqualTo: email)
         .limit(1)
         .get();
-    print('Admin docs found: ${adminQuery.docs.length}');
-    if (adminQuery.docs.isNotEmpty) {
-      print('Admin found: ${adminQuery.docs.first.data()}');
-    }
+
     return adminQuery.docs.isNotEmpty;
   }
 

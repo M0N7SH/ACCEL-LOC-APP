@@ -1,4 +1,3 @@
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
@@ -7,7 +6,7 @@ import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/widgets.dart'; // for AppLifecycleState
+ // for AppLifecycleState
 
 import '../background_task.dart';
 
@@ -33,11 +32,22 @@ class _AttendancePageState extends State<AttendancePage> {
   Duration totalDuration = Duration.zero;
   Timer? durationTimer;
   String? currentOfficeName;
+  bool _isOutsideConfirmed = false;
+  int _outsideConfirmationCount = 0;
 
   final List<OfficeBranch> officeBranches = [
-    OfficeBranch(13.058971971380322, 80.2425363696716, 50, "Nungambakkam"),
+    OfficeBranch(13.058971971380322, 80.2425363696716, 100, "Nungambakkam"),
     OfficeBranch(13.056712575729241, 80.25333280685233, 80, "Greames Road"),
   ];
+
+  Future<bool> isRegisteredUser(String email) async {
+    final userQuery = await FirebaseFirestore.instance
+        .collection('registered_users')
+        .where('email', isEqualTo: email)
+        .limit(1)
+        .get();
+    return userQuery.docs.isNotEmpty;
+  }
 
   List<Map<String, String>> lastFiveRecords = [];
 
@@ -64,7 +74,8 @@ class _AttendancePageState extends State<AttendancePage> {
     final userDoc = FirebaseFirestore.instance.collection('users').doc(uid);
     final snapshot = await userDoc.get();
 
-    if (!snapshot.exists || (snapshot.data()?['name'] ?? '').toString().isEmpty) {
+    if (!snapshot.exists ||
+        (snapshot.data()?['name'] ?? '').toString().isEmpty) {
       await Future.delayed(Duration.zero);
       String? name = await _showNameDialog();
 
@@ -125,11 +136,11 @@ class _AttendancePageState extends State<AttendancePage> {
 
       String uid = user.uid;
       DocumentSnapshot docSnapshot =
-      await FirebaseFirestore.instance.collection('users').doc(uid).get();
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
       Map<String, dynamic> data =
           docSnapshot.data() as Map<String, dynamic>? ?? {};
       Map<String, dynamic> attendance =
-      Map<String, dynamic>.from(data['attendance'] ?? {});
+          Map<String, dynamic>.from(data['attendance'] ?? {});
 
       List<Map<String, String>> records = [];
 
@@ -155,7 +166,7 @@ class _AttendancePageState extends State<AttendancePage> {
         lastFiveRecords = records;
       });
     } catch (e) {
-      print("Error loading last 5 records: $e");
+
     }
   }
 
@@ -163,7 +174,8 @@ class _AttendancePageState extends State<AttendancePage> {
     await testCheckout();
   }
 
-  Future<void> _updateFirestoreAttendance(DateTime inTime, DateTime? outTime, String officeName) async {
+  Future<void> _updateFirestoreAttendance(
+      DateTime inTime, DateTime? outTime, String officeName) async {
     try {
       User? user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
@@ -171,14 +183,19 @@ class _AttendancePageState extends State<AttendancePage> {
       String uid = user.uid;
       String dateKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
       String inFormatted = DateFormat('HH:mm').format(inTime);
-      String? outFormatted = outTime != null ? DateFormat('HH:mm').format(outTime) : null;
+      String? outFormatted =
+          outTime != null ? DateFormat('HH:mm').format(outTime) : null;
 
-      DocumentReference userDoc = FirebaseFirestore.instance.collection('users').doc(uid);
+      DocumentReference userDoc =
+          FirebaseFirestore.instance.collection('users').doc(uid);
 
       DocumentSnapshot docSnapshot = await userDoc.get();
-      Map<String, dynamic> data = docSnapshot.data() as Map<String, dynamic>? ?? {};
-      Map<String, dynamic> attendance = Map<String, dynamic>.from(data['attendance'] ?? {});
-      List<dynamic> dayAttendance = List<dynamic>.from(attendance[dateKey] ?? []);
+      Map<String, dynamic> data =
+          docSnapshot.data() as Map<String, dynamic>? ?? {};
+      Map<String, dynamic> attendance =
+          Map<String, dynamic>.from(data['attendance'] ?? {});
+      List<dynamic> dayAttendance =
+          List<dynamic>.from(attendance[dateKey] ?? []);
 
       if (outFormatted == null) {
         dayAttendance.add({
@@ -194,7 +211,8 @@ class _AttendancePageState extends State<AttendancePage> {
             record['at'] = officeName;
 
             DateTime inParsed = DateFormat('HH:mm').parse(record['in']);
-            Duration duration = DateFormat('HH:mm').parse(outFormatted).difference(inParsed);
+            Duration duration =
+                DateFormat('HH:mm').parse(outFormatted).difference(inParsed);
             record['duration'] = duration.toString().substring(0, 5);
             break;
           }
@@ -236,7 +254,7 @@ class _AttendancePageState extends State<AttendancePage> {
 
     if (permission == LocationPermission.deniedForever) return;
 
-    timer = Timer.periodic(Duration(seconds: 5), (_) async {
+    timer = Timer.periodic(Duration(seconds: 10), (_) async {
       try {
         Position position = await Geolocator.getCurrentPosition(
             desiredAccuracy: LocationAccuracy.best);
@@ -260,6 +278,9 @@ class _AttendancePageState extends State<AttendancePage> {
         SharedPreferences prefs = await SharedPreferences.getInstance();
 
         if (isInsideAnyOffice && nearbyOffice != null) {
+          _outsideConfirmationCount = 0;
+          _isOutsideConfirmed = false;
+
           if (attendanceStatus != 'Present') {
             await prefs.setString('attendanceStatus', 'Present');
             await prefs.setString('arrivalTime', now.toIso8601String());
@@ -275,28 +296,34 @@ class _AttendancePageState extends State<AttendancePage> {
             await _updateFirestoreAttendance(now, null, nearbyOffice!.name);
 
             // Cancel any existing duration timer
-            durationTimer?.cancel();
+
 
             // Start new duration timer that updates both local state and Firestore
-            durationTimer = Timer.periodic(Duration(minutes: 1), (timer) async {
-              if (arrivalTime == null) {
-                timer.cancel();
-                return;
-              }
+            if (durationTimer == null || !durationTimer!.isActive) {
+              durationTimer =
+                  Timer.periodic(Duration(minutes: 1), (timer) async {
+                    if (arrivalTime == null) {
+                      timer.cancel();
+                      return;
+                    }
 
-              Duration currentDuration = DateTime.now().difference(arrivalTime!);
-              setState(() {
-                totalDuration = currentDuration;
-              });
+                    Duration currentDuration =
+                    DateTime.now().difference(arrivalTime!);
+                    setState(() {
+                      totalDuration = currentDuration;
+                    });
 
-              // Update duration in SharedPreferences
-              await prefs.setInt('totalDuration', currentDuration.inSeconds);
+                    // Update duration in SharedPreferences
+                    await prefs.setInt(
+                        'totalDuration', currentDuration.inSeconds);
 
-              // Update duration in Firestore
-              await _updateDurationOnly(currentDuration.inMinutes);
-            });
+                    // Update duration in Firestore
+                    await _updateDurationOnly(currentDuration.inMinutes);
+                  });
+            }
 
-            if (AppLifecycleState.resumed == WidgetsBinding.instance.lifecycleState) {
+            if (AppLifecycleState.resumed ==
+                WidgetsBinding.instance.lifecycleState) {
               showDialog(
                 context: context,
                 builder: (context) => AlertDialog(
@@ -327,9 +354,11 @@ class _AttendancePageState extends State<AttendancePage> {
             }
           }
         } else {
-          if (attendanceStatus == 'Present') {
+          _outsideConfirmationCount++;
+          if (_outsideConfirmationCount >= 2 && attendanceStatus == 'Present') {
             String officeName = currentOfficeName ?? 'Unknown';
             await _checkoutLogic(officeName);
+            _isOutsideConfirmed = true;
           }
         }
       } catch (e) {
@@ -346,15 +375,20 @@ class _AttendancePageState extends State<AttendancePage> {
       String uid = user.uid;
       String dateKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-      DocumentReference userDoc = FirebaseFirestore.instance.collection('users').doc(uid);
+      DocumentReference userDoc =
+          FirebaseFirestore.instance.collection('users').doc(uid);
       DocumentSnapshot docSnapshot = await userDoc.get();
-      Map<String, dynamic> data = docSnapshot.data() as Map<String, dynamic>? ?? {};
-      Map<String, dynamic> attendance = Map<String, dynamic>.from(data['attendance'] ?? {});
-      List<dynamic> dayAttendance = List<dynamic>.from(attendance[dateKey] ?? []);
+      Map<String, dynamic> data =
+          docSnapshot.data() as Map<String, dynamic>? ?? {};
+      Map<String, dynamic> attendance =
+          Map<String, dynamic>.from(data['attendance'] ?? {});
+      List<dynamic> dayAttendance =
+          List<dynamic>.from(attendance[dateKey] ?? []);
 
       for (var record in dayAttendance.reversed) {
         if (record is Map && record['out'] == null) {
-          record['duration'] = '${(minutes ~/ 60).toString().padLeft(2, '0')}:${(minutes % 60).toString().padLeft(2, '0')}';
+          record['duration'] =
+              '${(minutes ~/ 60).toString().padLeft(2, '0')}:${(minutes % 60).toString().padLeft(2, '0')}';
           break;
         }
       }
@@ -452,7 +486,7 @@ class _AttendancePageState extends State<AttendancePage> {
     if (prefs.containsKey('arrivalTime')) {
       DateTime arrival = DateTime.parse(prefs.getString('arrivalTime')!);
       Duration previousDuration =
-      Duration(seconds: prefs.getInt('totalDuration') ?? 0);
+          Duration(seconds: prefs.getInt('totalDuration') ?? 0);
       Duration newDuration = now.difference(arrival);
       int totalSeconds = previousDuration.inSeconds + newDuration.inSeconds;
       await prefs.setInt('totalDuration', totalSeconds);
@@ -490,7 +524,7 @@ class _AttendancePageState extends State<AttendancePage> {
     if (prefs.containsKey('arrivalTime')) {
       DateTime arrival = DateTime.parse(prefs.getString('arrivalTime')!);
       Duration previousDuration =
-      Duration(seconds: prefs.getInt('totalDuration') ?? 0);
+          Duration(seconds: prefs.getInt('totalDuration') ?? 0);
       Duration newDuration = now.difference(arrival);
       int totalSeconds = previousDuration.inSeconds + newDuration.inSeconds;
       await prefs.setInt('totalDuration', totalSeconds);
@@ -506,18 +540,19 @@ class _AttendancePageState extends State<AttendancePage> {
         String outFormatted = DateFormat('HH:mm').format(now);
 
         DocumentReference userDoc =
-        FirebaseFirestore.instance.collection('users').doc(uid);
+            FirebaseFirestore.instance.collection('users').doc(uid);
 
         DocumentSnapshot docSnapshot = await userDoc.get();
         Map<String, dynamic> data =
             docSnapshot.data() as Map<String, dynamic>? ?? {};
 
         Map<String, dynamic> attendance =
-        Map<String, dynamic>.from(data['attendance'] ?? {});
+            Map<String, dynamic>.from(data['attendance'] ?? {});
         List<dynamic> dayAttendance =
-        List<dynamic>.from(attendance[dateKey] ?? []);
+            List<dynamic>.from(attendance[dateKey] ?? []);
 
-        dayAttendance.add({'in': inFormatted, 'out': outFormatted, 'note': 'Test Checkout'});
+        dayAttendance.add(
+            {'in': inFormatted, 'out': outFormatted, 'note': 'Test Checkout'});
         attendance[dateKey] = dayAttendance;
 
         await userDoc.set({
@@ -552,79 +587,123 @@ class _AttendancePageState extends State<AttendancePage> {
 
   @override
   Widget build(BuildContext context) {
+    final User? user = FirebaseAuth.instance.currentUser;
+    final String? userEmail = user?.email;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Center(child: const Text('Attendance Tracker', style: TextStyle(color: Colors.white))),
-        backgroundColor: Colors.deepPurpleAccent,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(25),
+        appBar: AppBar(
+          title: Center(
+              child: const Text('Attendance Tracker',
+                  style: TextStyle(color: Colors.white))),
+          backgroundColor: Colors.deepPurpleAccent,
+        ),
+        body: FutureBuilder<bool>(
+            future: isRegisteredUser(userEmail ?? ''),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              if (!snapshot.data!) {
+                return const Center(
+                  child: Text("Access denied. You are not a registered user."),
+                );
+              }
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
-                    Icon(Icons.access_time_filled_rounded, size: 60, color: Colors.deepPurple),
+                    Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(25),
+                        child: Column(
+                          children: [
+                            Icon(Icons.access_time_filled_rounded,
+                                size: 60, color: Colors.deepPurple),
+                            const SizedBox(height: 10),
+                            Text('Status: $attendanceStatus',
+                                style:
+                                    Theme.of(context).textTheme.headlineSmall),
+                            const SizedBox(height: 10),
+                            Text(
+                                'Arrival: ${arrivalTime != null ? DateFormat.Hm().format(arrivalTime!) : "Not Arrived"}'),
+                            Text(
+                                'Departure: ${departureTime != null ? DateFormat.Hm().format(departureTime!) : "Not Left"}'),
+                            const SizedBox(height: 10),
+                            StreamBuilder<Duration>(
+                              stream: Stream.periodic(
+                                      Duration(minutes: 1),
+                                      (_) => getDailyDuration(
+                                          DateFormat('yyyy-MM-dd')
+                                              .format(DateTime.now())))
+                                  .asyncMap((future) => future),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState ==
+                                        ConnectionState.waiting &&
+                                    !snapshot.hasData) {
+                                  return CircularProgressIndicator();
+                                } else if (snapshot.hasError) {
+                                  return Text("Error: ${snapshot.error}");
+                                } else {
+                                  final duration =
+                                      snapshot.data ?? Duration.zero;
+                                  return Text(
+                                      "Total Duration: ${formatDuration(duration)}",
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold));
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Last 5 Records:',
+                          style: Theme.of(context).textTheme.titleLarge),
+                    ),
                     const SizedBox(height: 10),
-                    Text('Status: $attendanceStatus',
-                        style: Theme.of(context).textTheme.headlineSmall),
-                    const SizedBox(height: 10),
-                    Text('Arrival: ${arrivalTime != null ? DateFormat.Hm().format(arrivalTime!) : "Not Arrived"}'),
-                    Text('Departure: ${departureTime != null ? DateFormat.Hm().format(departureTime!) : "Not Left"}'),
-                    const SizedBox(height: 10),
-                    StreamBuilder<Duration>(
-                      stream: Stream.periodic(Duration(minutes: 1), (_) => getDailyDuration(DateFormat('yyyy-MM-dd').format(DateTime.now()))).asyncMap((future) => future),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
-                          return CircularProgressIndicator();
-                        } else if (snapshot.hasError) {
-                          return Text("Error: ${snapshot.error}");
-                        } else {
-                          final duration = snapshot.data ?? Duration.zero;
-                          return Text("Total Duration: ${formatDuration(duration)}",
-                              style: TextStyle(fontWeight: FontWeight.bold));
+                    ...lastFiveRecords.map((record) {
+                      return Card(
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                        elevation: 3,
+                        child: ListTile(
+                          leading: Icon(Icons.calendar_today,
+                              color: Colors.deepPurpleAccent),
+                          title: Text('${record['date']}'),
+                          subtitle: Text(
+                              'In: ${record['in']} | Out: ${record['out']}'),
+                        ),
+                      );
+                    }).toList(),
+                    const SizedBox(height: 30),
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        try {
+                          await _checkoutLogic(currentOfficeName ?? 'Manual Checkout');
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Error during checkout: $e')),
+                          );
                         }
                       },
+                      icon: Icon(Icons.logout),
+                      label: Text("Test Checkout"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      ),
                     ),
-
                   ],
                 ),
-              ),
-            ),
-            const SizedBox(height: 30),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text('Last 5 Records:', style: Theme.of(context).textTheme.titleLarge),
-            ),
-            const SizedBox(height: 10),
-            ...lastFiveRecords.map((record) {
-              return Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                elevation: 3,
-                child: ListTile(
-                  leading: Icon(Icons.calendar_today, color: Colors.deepPurpleAccent),
-                  title: Text('${record['date']}'),
-                  subtitle: Text('In: ${record['in']} | Out: ${record['out']}'),
-                ),
               );
-            }).toList(),
-            const SizedBox(height: 30),
-            ElevatedButton.icon(
-              onPressed: _simulateCheckout,
-              icon: Icon(Icons.logout),
-              label: Text("Test Checkout"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent,
-                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+            }));
   }
 }

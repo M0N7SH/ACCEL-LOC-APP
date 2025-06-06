@@ -122,7 +122,7 @@ Future<void> onStart(ServiceInstance service) async {
         await flutterLocalNotificationsPlugin.show(
           0,
           'Location Updated',
-          'Your background location has been updated.',
+          'Check status.',
           platformDetails,
         );
       } catch (e) {

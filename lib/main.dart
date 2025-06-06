@@ -89,7 +89,7 @@ class MyApp extends StatelessWidget {
         brightness: Brightness.light,
         primarySwatch: Colors.indigo,
       ),
-      home: AuthGate(),
+      home: AuthGate(), //Proceeds to Authentication
     );
   }
 }

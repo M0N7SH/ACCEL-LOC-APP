@@ -231,8 +231,8 @@ class _ViewAttendancePageState extends State<ViewAttendancePage> {
                     elevation: 2,
                     margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                     child: ListTile(
-                      title: Text("In: ${entry['in']} - Out: ${entry['out']}"),
-                      subtitle: Text("Note: ${entry['note']}"),
+                      title: Text("In: ${entry['in']} - Out: ${entry['out'] ?? '-'}"),
+                      // subtitle: Text("Note: ${entry['note'] ?? '- Present'}"),
                     ),
                   );
                 },
